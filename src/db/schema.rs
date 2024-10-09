@@ -7,6 +7,6 @@ diesel::table! {
         username -> Varchar,
         password -> Varchar,
         refresh_token -> Nullable<Varchar>,
-        registration_date -> Date,
+        registration_date -> Timestamp,
     }
 }

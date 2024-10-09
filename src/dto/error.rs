@@ -1,8 +1,8 @@
 use crate::model;
-use actix_web::http::StatusCode;
-use actix_web::{HttpResponse, ResponseError};
 use actix_web::error::BlockingError;
+use actix_web::http::StatusCode;
 use actix_web::web::Json;
+use actix_web::{HttpResponse, ResponseError};
 use serde::Serialize;
 
 #[derive(thiserror::Error, Serialize, Debug)]
@@ -16,6 +16,9 @@ pub enum ErrorDTO {
     #[error("Invalid credentials")]
     InvalidCredentials,
 
+    #[error("Invalid token")]
+    InvalidToken,
+
     #[error(transparent)]
     Validation(#[from] validator::ValidationErrors),
 
@@ -28,9 +31,9 @@ impl ResponseError for ErrorDTO {
         match self {
             Self::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::WrongDataFormat => StatusCode::BAD_REQUEST,
-            Self::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            Self::InvalidCredentials | Self::InvalidToken => StatusCode::UNAUTHORIZED,
             Self::Validation(_error) => StatusCode::BAD_REQUEST,
-            Self::UserNotFound => StatusCode::NOT_FOUND
+            Self::UserNotFound => StatusCode::NOT_FOUND,
         }
     }
 
@@ -53,7 +56,7 @@ impl From<model::user::Error> for ErrorDTO {
             _ => {
                 log::error!("{}", value);
                 ErrorDTO::InternalServerError
-            },
+            }
         }
     }
 }

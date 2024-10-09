@@ -1,5 +1,5 @@
 use crate::db::schema::users;
-use chrono::NaiveDate;
+use chrono::{NaiveDateTime};
 use diesel::prelude::*;
 use uuid::Uuid;
 
@@ -11,7 +11,7 @@ pub struct User {
     pub username: String,
     pub password: String,
     pub refresh_token: Option<String>,
-    pub registration_date: NaiveDate,
+    pub registration_date: NaiveDateTime,
 }
 
 #[derive(Clone, Debug)]
@@ -20,7 +20,7 @@ pub struct CreateUser {
     pub username: String,
     pub password: String,
     pub refresh_token: Option<String>,
-    pub registration_date: NaiveDate,
+    pub registration_date: NaiveDateTime,
 }
 
 #[derive(AsChangeset, Clone, Debug)]
@@ -30,7 +30,7 @@ pub struct UpdateUser {
     pub username: Option<String>,
     pub password: Option<String>,
     pub refresh_token: Option<Option<String>>,
-    pub registration_date: Option<NaiveDate>,
+    pub registration_date: Option<NaiveDateTime>,
 }
 
 impl Default for UpdateUser {
@@ -63,7 +63,7 @@ pub fn create_user(creation_data: CreateUser, db_conn: &mut PgConnection) -> Res
     Ok(user)
 }
 
-pub fn read_user(user_id: Uuid, db_conn: &mut PgConnection) -> Result<User, Error> {
+pub fn read_user(user_id: &Uuid, db_conn: &mut PgConnection) -> Result<User, Error> {
     users::table
         .find(user_id)
         .get_result(db_conn)

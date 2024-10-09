@@ -1,9 +1,7 @@
 use crate::dto::auth::{LoginRequest, RegisterRequest, TokenPair};
 use crate::dto::error::ErrorDTO;
 use crate::middleware::validation::ValidatedJson;
-use crate::model::user::{
-    create_user, read_user, read_user_by_email, update_user, CreateUser, UpdateUser,
-};
+use crate::model::user::*;
 use crate::util::jwt::generate_token_pair;
 use crate::{db, model};
 use actix_web::{post, web};
@@ -30,7 +28,7 @@ async fn register(
         username: request.username.clone(),
         password: password_hash,
         refresh_token: None,
-        registration_date: Utc::now().date_naive(),
+        registration_date: Utc::now().naive_utc(),
     };
 
     let token_pair = web::block(move || -> Result<TokenPair, model::user::Error> {
