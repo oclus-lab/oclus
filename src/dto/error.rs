@@ -2,6 +2,7 @@ use crate::model;
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::error::BlockingError;
+use actix_web::web::Json;
 use serde::Serialize;
 
 #[derive(thiserror::Error, Serialize, Debug)]
@@ -11,6 +12,9 @@ pub enum ErrorDTO {
 
     #[error("Wrong data format")]
     WrongDataFormat,
+
+    #[error("Invalid credentials")]
+    InvalidCredentials,
 
     #[error(transparent)]
     Validation(#[from] validator::ValidationErrors),
@@ -24,18 +28,14 @@ impl ResponseError for ErrorDTO {
         match self {
             Self::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::WrongDataFormat => StatusCode::BAD_REQUEST,
+            Self::InvalidCredentials => StatusCode::UNAUTHORIZED,
             Self::Validation(_error) => StatusCode::BAD_REQUEST,
             Self::UserNotFound => StatusCode::NOT_FOUND
         }
     }
 
     fn error_response(&self) -> HttpResponse {
-        let body: String = match self {
-            Self::Validation(error) => serde_json::to_string(error).unwrap_or_default(),
-            _ => self.to_string(),
-        };
-
-        HttpResponse::build(self.status_code()).json(body)
+        HttpResponse::build(self.status_code()).json(Json(self))
     }
 }
 

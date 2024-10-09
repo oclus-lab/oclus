@@ -22,8 +22,8 @@ pub struct RegisterRequest {
 
 #[derive(Deserialize, Validate, Clone, Debug)]
 pub struct LoginRequest {
-    #[validate(length(min = USERNAME_MIN_LEN))]
-    pub identifier: String,
+    #[validate(email)]
+    pub email: String,
 
     #[validate(length(min = PASSWORD_MIN_LEN))]
     pub password: String,

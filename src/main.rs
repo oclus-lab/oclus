@@ -16,7 +16,7 @@ async fn main() -> Result<(), std::io::Error> {
 
     HttpServer::new(move || {
         App::new()
-            .configure(route::config_route)
+            .configure(route::config_routes)
             .app_data(web::Data::new(db_pool.clone()))
     })
     .bind(("0.0.0.0", 8080))?

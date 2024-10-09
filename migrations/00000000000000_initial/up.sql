@@ -4,8 +4,7 @@ CREATE TABLE users
     email             VARCHAR UNIQUE NOT NULL,
     username          VARCHAR        NOT NULL,
     password          VARCHAR        NOT NULL,
-    display_name      VARCHAR        NOT NULL,
+    refresh_token     VARCHAR,
     registration_date DATE           NOT NULL,
     PRIMARY KEY (id)
 );
-

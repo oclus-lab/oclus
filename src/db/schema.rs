@@ -6,7 +6,7 @@ diesel::table! {
         email -> Varchar,
         username -> Varchar,
         password -> Varchar,
-        display_name -> Varchar,
+        refresh_token -> Nullable<Varchar>,
         registration_date -> Date,
     }
 }

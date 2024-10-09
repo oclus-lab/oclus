@@ -1,7 +1,7 @@
+use crate::db::schema::users;
 use chrono::NaiveDate;
 use diesel::prelude::*;
 use uuid::Uuid;
-use crate::db::schema::users;
 
 #[derive(Queryable, Insertable, Clone, Debug)]
 #[diesel(table_name = crate::db::schema::users)]
@@ -10,7 +10,7 @@ pub struct User {
     pub email: String,
     pub username: String,
     pub password: String,
-    pub display_name: String,
+    pub refresh_token: Option<String>,
     pub registration_date: NaiveDate,
 }
 
@@ -19,7 +19,7 @@ pub struct CreateUser {
     pub email: String,
     pub username: String,
     pub password: String,
-    pub display_name: String,
+    pub refresh_token: Option<String>,
     pub registration_date: NaiveDate,
 }
 
@@ -29,8 +29,20 @@ pub struct UpdateUser {
     pub email: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
-    pub display_name: Option<String>,
+    pub refresh_token: Option<Option<String>>,
     pub registration_date: Option<NaiveDate>,
+}
+
+impl Default for UpdateUser {
+    fn default() -> Self {
+        Self {
+            email: None,
+            username: None,
+            password: None,
+            refresh_token: None,
+            registration_date: None,
+        }
+    }
 }
 
 pub fn create_user(creation_data: CreateUser, db_conn: &mut PgConnection) -> Result<User, Error> {
@@ -40,7 +52,7 @@ pub fn create_user(creation_data: CreateUser, db_conn: &mut PgConnection) -> Res
         email: creation_data.email,
         username: creation_data.username,
         password: creation_data.password,
-        display_name: creation_data.display_name,
+        refresh_token: creation_data.refresh_token,
         registration_date: creation_data.registration_date,
     };
 
@@ -54,6 +66,16 @@ pub fn create_user(creation_data: CreateUser, db_conn: &mut PgConnection) -> Res
 pub fn read_user(user_id: Uuid, db_conn: &mut PgConnection) -> Result<User, Error> {
     users::table
         .find(user_id)
+        .get_result(db_conn)
+        .map_err(|error| match error {
+            diesel::result::Error::NotFound => Error::UserNotFound,
+            _ => Error::DieselError(error),
+        })
+}
+
+pub fn read_user_by_email(email: &str, db_conn: &mut PgConnection) -> Result<User, Error> {
+    users::table
+        .filter(users::email.eq(email))
         .get_result(db_conn)
         .map_err(|error| match error {
             diesel::result::Error::NotFound => Error::UserNotFound,

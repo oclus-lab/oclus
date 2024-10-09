@@ -4,9 +4,10 @@ mod auth;
 use crate::dto::error::ErrorDTO;
 use actix_web::{get, web};
 
-pub fn config_route(cfg: &mut web::ServiceConfig) {
+pub fn config_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(server_info);
-    cfg.configure(user::config_route);
+    cfg.configure(auth::config_routes);
+    cfg.configure(user::config_routes);
 }
 
 #[get("/")]
