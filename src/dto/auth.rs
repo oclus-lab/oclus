@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 const USERNAME_MIN_LEN: u64 = 4;
@@ -27,4 +27,10 @@ pub struct LoginRequest {
 
     #[validate(length(min = PASSWORD_MIN_LEN))]
     pub password: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct TokenPair {
+    pub auth_token: String,
+    pub refresh_token: String,
 }

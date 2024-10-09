@@ -1,6 +1,7 @@
 mod user;
+mod auth;
 
-use crate::dto::error::ErrorDetail;
+use crate::dto::error::ErrorDTO;
 use actix_web::{get, web};
 
 pub fn config_route(cfg: &mut web::ServiceConfig) {
@@ -9,6 +10,6 @@ pub fn config_route(cfg: &mut web::ServiceConfig) {
 }
 
 #[get("/")]
-async fn server_info() -> Result<String, ErrorDetail> {
-    Ok("Oclus server\nVersion = 0.1.0".to_string())
+async fn server_info() -> Result<String, ErrorDTO> {
+    Ok("Oclus API\nVersion = 0.1.0".to_string())
 }

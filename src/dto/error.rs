@@ -3,7 +3,7 @@ use actix_web::{HttpResponse, ResponseError};
 use serde::Serialize;
 
 #[derive(thiserror::Error, Serialize, Debug)]
-pub enum ErrorDetail {
+pub enum ErrorDTO {
     #[error("Internal server error")]
     InternalServerError,
 
@@ -14,7 +14,7 @@ pub enum ErrorDetail {
     Validation(#[from] validator::ValidationErrors),
 }
 
-impl ResponseError for ErrorDetail {
+impl ResponseError for ErrorDTO {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
