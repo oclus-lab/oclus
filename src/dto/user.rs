@@ -6,6 +6,7 @@ use uuid::Uuid;
 pub struct PublicProfile {
     pub id: Uuid,
     pub username: String,
+    pub display_name: String,
 }
 
 #[derive(Serialize, Clone, Debug)]

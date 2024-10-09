@@ -25,10 +25,10 @@ impl<T: Validate + DeserializeOwned + 'static> FromRequest for ValidatedJson<T> 
             match json_future.await {
                 // data validation with validator
                 Ok(data) => match data.validate() {
-                    Ok(_) => Ok(Validated(data.into_inner())),
-                    Err(error) => Err(ErrorDetail::Validation(error)),
+                    Ok(_) => Ok(ValidatedJson(data.into_inner())),
+                    Err(error) => Err(ErrorDTO::Validation(error)),
                 },
-                Err(_error) => Err(ErrorDetail::WrongDataFormat),
+                Err(_error) => Err(ErrorDTO::WrongDataFormat),
             }
         })
     }
