@@ -1,5 +1,7 @@
+use crate::model;
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, ResponseError};
+use actix_web::error::BlockingError;
 use serde::Serialize;
 
 #[derive(thiserror::Error, Serialize, Debug)]
@@ -12,6 +14,9 @@ pub enum ErrorDTO {
 
     #[error(transparent)]
     Validation(#[from] validator::ValidationErrors),
+
+    #[error("User not found in database")]
+    UserNotFound,
 }
 
 impl ResponseError for ErrorDTO {
@@ -20,6 +25,7 @@ impl ResponseError for ErrorDTO {
             Self::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::WrongDataFormat => StatusCode::BAD_REQUEST,
             Self::Validation(_error) => StatusCode::BAD_REQUEST,
+            Self::UserNotFound => StatusCode::NOT_FOUND
         }
     }
 
@@ -30,5 +36,24 @@ impl ResponseError for ErrorDTO {
         };
 
         HttpResponse::build(self.status_code()).json(body)
+    }
+}
+
+impl From<BlockingError> for ErrorDTO {
+    fn from(value: BlockingError) -> Self {
+        log::error!("{}", value);
+        Self::InternalServerError
+    }
+}
+
+impl From<model::user::Error> for ErrorDTO {
+    fn from(value: model::user::Error) -> Self {
+        match value {
+            model::user::Error::UserNotFound => ErrorDTO::UserNotFound,
+            _ => {
+                log::error!("{}", value);
+                ErrorDTO::InternalServerError
+            },
+        }
     }
 }
