@@ -1,4 +1,3 @@
-use crate::model;
 use actix_web::error::BlockingError;
 use actix_web::http::StatusCode;
 use actix_web::web::Json;
@@ -24,6 +23,9 @@ pub enum ErrorDTO {
 
     #[error("User not found in database")]
     UserNotFound,
+
+    #[error("Email already exists in database")]
+    UserEmailConflict,
 }
 
 impl ResponseError for ErrorDTO {
@@ -34,6 +36,7 @@ impl ResponseError for ErrorDTO {
             Self::InvalidCredentials | Self::InvalidToken => StatusCode::UNAUTHORIZED,
             Self::Validation(_error) => StatusCode::BAD_REQUEST,
             Self::UserNotFound => StatusCode::NOT_FOUND,
+            Self::UserEmailConflict => StatusCode::CONFLICT,
         }
     }
 
@@ -46,17 +49,5 @@ impl From<BlockingError> for ErrorDTO {
     fn from(value: BlockingError) -> Self {
         log::error!("{}", value);
         Self::InternalServerError
-    }
-}
-
-impl From<model::user::Error> for ErrorDTO {
-    fn from(value: model::user::Error) -> Self {
-        match value {
-            model::user::Error::UserNotFound => ErrorDTO::UserNotFound,
-            _ => {
-                log::error!("{}", value);
-                ErrorDTO::InternalServerError
-            }
-        }
     }
 }

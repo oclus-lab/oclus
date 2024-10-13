@@ -3,9 +3,11 @@ use crate::dto::error::ErrorDTO;
 use crate::dto::user::{PrivateProfile, PublicProfile, UpdateProfileRequest};
 use crate::middleware::auth::AuthInfo;
 use crate::middleware::validation::ValidatedJson;
+use crate::model::user;
 use crate::model::user::{delete_user, read_user, update_user, UpdateUser};
+use crate::util::sync::block_for_db;
 use actix_web::web::Json;
-use actix_web::{delete, get, put, web};
+use actix_web::{delete, get, put, web, HttpResponse};
 use uuid::Uuid;
 
 pub fn config_routes(cfg: &mut web::ServiceConfig) {
@@ -16,18 +18,14 @@ pub fn config_routes(cfg: &mut web::ServiceConfig) {
 }
 
 #[get("/users/me")]
-async fn get_private_profile(
-    auth: AuthInfo,
-    db_pool: web::Data<db::Pool>,
-) -> Result<Json<PublicProfile>, ErrorDTO> {
+async fn get_private_profile(auth: AuthInfo, db_pool: web::Data<db::Pool>) -> Result<Json<PublicProfile>, ErrorDTO> {
     let user_id = auth.user_id;
 
-    let user = web::block(move || {
-        let mut db_conn = db_pool
-            .get()
-            .expect("Failed to get db connection from pool");
-
-        read_user(&user_id, &mut db_conn)
+    let user = block_for_db(&db_pool, move |mut db_conn| {
+        read_user(&user_id, &mut db_conn).map_err(|error| match error {
+            user::Error::UserNotFound => ErrorDTO::UserNotFound,
+            _ => ErrorDTO::InternalServerError,
+        })
     })
     .await??;
 
@@ -42,12 +40,11 @@ async fn get_public_profile(
 ) -> Result<Json<PublicProfile>, ErrorDTO> {
     let user_id = user_id.into_inner();
 
-    let user = web::block(move || {
-        let mut db_conn = db_pool
-            .get()
-            .expect("Failed to get db connection from pool");
-
-        read_user(&user_id, &mut db_conn)
+    let user = block_for_db(&db_pool, move |mut db_conn| {
+        read_user(&user_id, &mut db_conn).map_err(|error| match error {
+            user::Error::UserNotFound => ErrorDTO::UserNotFound,
+            _ => ErrorDTO::InternalServerError,
+        })
     })
     .await??;
 
@@ -71,14 +68,16 @@ async fn update_profile(
         registration_date: None,
     };
 
-    let user = web::block(move || {
-        let mut db_conn = db_pool
-            .get()
-            .expect("Failed to get db connection from pool");
-
+    let user = block_for_db(&db_pool, move |mut db_conn| {
         update_user(&user_id, &update_data, &mut db_conn)
     })
-    .await??;
+    .await?
+    .map_err(|error| {
+        if let user::Error::UserNotFound = error {
+            log::warn!("Authenticated user not found in database");
+        }
+        ErrorDTO::InternalServerError
+    })?;
 
     Ok(Json(user.into()))
 }
@@ -87,22 +86,27 @@ async fn update_profile(
 async fn delete_profile(
     auth: AuthInfo,
     db_pool: web::Data<db::Pool>,
-    password: String,
-) -> Result<String, ErrorDTO> {
-    let user_id = auth.user_id;
+    password: String, // authenticated user have to provide his password
+) -> Result<HttpResponse, ErrorDTO> {
+    block_for_db(&db_pool, move |mut db_conn| -> Result<(), ErrorDTO> {
+        let user = read_user(&auth.user_id, &mut db_conn).map_err(|error| match error {
+            user::Error::UserNotFound => ErrorDTO::InvalidCredentials,
+            _ => ErrorDTO::InternalServerError,
+        })?;
 
-    web::block(move || -> Result<(), ErrorDTO> {
-        let mut db_conn = db_pool
-            .get()
-            .expect("Failed to get db connection from pool");
-
-        let user = read_user(&auth.user_id, &mut db_conn)?;
+        // password verification
         bcrypt::verify(password, &user.password).map_err(|_| ErrorDTO::InvalidCredentials)?;
 
-        delete_user(&user_id, &mut db_conn)?;
+        delete_user(&auth.user_id, &mut db_conn).map_err(|error|  {
+            if let user::Error::UserNotFound = error {
+                log::error!("Data incoherence, user {} found doesn't exists", user.id);
+            }
+
+            ErrorDTO::InternalServerError
+        })?;
         Ok(())
     })
     .await??;
 
-    Ok("Account deleted successfully".to_string())
+    Ok(HttpResponse::Ok().finish())
 }
