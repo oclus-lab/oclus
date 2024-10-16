@@ -1,4 +1,4 @@
-use crate::db;
+use crate::{db, model};
 use crate::dto::auth::{LoginRequest, RegisterRequest, TokenPair};
 use crate::dto::error::ErrorDTO;
 use crate::middleware::validation::ValidatedJson;
@@ -33,8 +33,8 @@ async fn register(
     };
 
     let token_pair = block_for_db(&db_pool, move |mut db_conn| -> Result<TokenPair, ErrorDTO> {
-        let user = create_user(creation_data, &mut db_conn).map_err(|error| match error {
-            user::Error::EmailConflict => ErrorDTO::UserEmailConflict,
+        let user = create(creation_data, &mut db_conn).map_err(|error| match error {
+            model::Error::UserEmailConflict => ErrorDTO::UserEmailConflict,
             _ => ErrorDTO::InternalServerError,
         })?;
         
@@ -42,7 +42,7 @@ async fn register(
 
         // save the refresh token in db
         save_refresh_token(&user.id, token_pair.refresh_token.clone(), &mut db_conn).map_err(|error| {
-            if let user::Error::UserNotFound = error {
+            if let model::Error::UserNotFound = error {
                 log::error!("Data incoherence, created user {} doesn't exists anymore", user.id);
             }
             ErrorDTO::InternalServerError
@@ -63,8 +63,8 @@ async fn login(
     let request = request.into_inner();
 
     let token_pair = block_for_db(&db_pool, move |mut db_conn| -> Result<TokenPair, ErrorDTO> {
-        let user = read_user_by_email(&request.email, &mut db_conn).map_err(|error| match error {
-            user::Error::UserNotFound => ErrorDTO::InvalidCredentials,
+        let user = user::get_by_email(&request.email, &mut db_conn).map_err(|error| match error {
+            model::Error::UserNotFound => ErrorDTO::InvalidCredentials,
             _ => ErrorDTO::InternalServerError,
         })?;
 
@@ -74,7 +74,7 @@ async fn login(
 
         // save the new refresh token in db
         save_refresh_token(&user.id, token_pair.refresh_token.clone(), &mut db_conn).map_err(|error| {
-            if let user::Error::UserNotFound = error {
+            if let model::Error::UserNotFound = error {
                 log::error!(
                     "Data incoherence, previously found user {} doesn't exists anymore",
                     user.id
@@ -90,12 +90,12 @@ async fn login(
     Ok(web::Json(token_pair))
 }
 
-fn save_refresh_token(user_id: &Uuid, refresh_token: String, db_conn: &mut PgConnection) -> Result<(), user::Error> {
+fn save_refresh_token(user_id: &Uuid, refresh_token: String, db_conn: &mut PgConnection) -> Result<(), model::Error> {
     let update_data = UpdateUser::builder()
         .refresh_token(Some(Some(refresh_token)))
         .build()
         .unwrap();
 
-    update_user(user_id, &update_data, db_conn)?;
+    update(user_id, &update_data, db_conn)?;
     Ok(())
 }

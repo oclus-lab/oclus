@@ -1,4 +1,5 @@
 use crate::db::schema::users;
+use crate::model;
 use chrono::NaiveDateTime;
 use derive_builder::Builder;
 use diesel::prelude::*;
@@ -45,86 +46,68 @@ impl UpdateUser {
     }
 }
 
-pub fn create_user(creation_data: CreateUser, db_conn: &mut PgConnection) -> Result<User, Error> {
-    // check for email conflict
-    let email_already_exists = users::table
-        .filter(users::email.eq(&creation_data.email))
-        .first::<User>(db_conn)
-        .optional()?
-        .is_some();
+pub fn create(creation_data: CreateUser, db_conn: &mut PgConnection) -> Result<User, model::Error> {
+    db_conn.transaction(|conn| {
+        // check for email conflict
+        let email_exists = diesel::select(diesel::dsl::exists(
+            users::table.filter(users::email.eq(&creation_data.email)),
+        ))
+        .get_result::<bool>(conn)?;
 
-    if email_already_exists {
-        return Err(Error::EmailConflict);
-    }
+        if email_exists {
+            return Err(model::Error::UserEmailConflict);
+        }
 
-    let id = Uuid::now_v7();
-    let user = User {
-        id,
-        email: creation_data.email,
-        username: creation_data.username,
-        password: creation_data.password,
-        refresh_token: creation_data.refresh_token,
-        registration_date: creation_data.registration_date,
-    };
+        let id = Uuid::now_v7();
+        let user = User {
+            id,
+            email: creation_data.email,
+            username: creation_data.username,
+            password: creation_data.password,
+            refresh_token: creation_data.refresh_token,
+            registration_date: creation_data.registration_date,
+        };
 
-    diesel::insert_into(users::table).values(&user).execute(db_conn)?;
+        diesel::insert_into(users::table).values(&user).execute(conn)?;
 
-    Ok(user)
+        Ok(user)
+    })
 }
 
-pub fn read_user(user_id: &Uuid, db_conn: &mut PgConnection) -> Result<User, Error> {
+pub fn get(user_id: &Uuid, db_conn: &mut PgConnection) -> Result<User, model::Error> {
     users::table
         .find(user_id)
         .get_result(db_conn)
         .map_err(|error| match error {
-            diesel::result::Error::NotFound => Error::UserNotFound,
+            diesel::result::Error::NotFound => model::Error::UserNotFound,
             _ => error.into(),
         })
 }
 
-pub fn read_user_by_email(email: &str, db_conn: &mut PgConnection) -> Result<User, Error> {
+pub fn get_by_email(email: &str, db_conn: &mut PgConnection) -> Result<User, model::Error> {
     users::table
         .filter(users::email.eq(email))
         .get_result(db_conn)
         .map_err(|error| match error {
-            diesel::result::Error::NotFound => Error::UserNotFound,
+            diesel::result::Error::NotFound => model::Error::UserNotFound,
             _ => error.into(),
         })
 }
 
-pub fn update_user(user_id: &Uuid, update_data: &UpdateUser, db_conn: &mut PgConnection) -> Result<User, Error> {
+pub fn update(user_id: &Uuid, update_data: &UpdateUser, db_conn: &mut PgConnection) -> Result<User, model::Error> {
     diesel::update(users::table.find(user_id))
         .set(update_data)
         .get_result(db_conn)
         .map_err(|error| match error {
-            diesel::result::Error::NotFound => Error::UserNotFound,
+            diesel::result::Error::NotFound => model::Error::UserNotFound,
             _ => error.into(),
         })
 }
 
-pub fn delete_user(user_id: &Uuid, db_conn: &mut PgConnection) -> Result<(), Error> {
+pub fn delete(user_id: &Uuid, db_conn: &mut PgConnection) -> Result<(), model::Error> {
     let deleted = diesel::delete(users::table.find(user_id)).execute(db_conn)?;
     match deleted > 0 {
         true => Ok(()),
-        false => Err(Error::UserNotFound),
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("User not found in database")]
-    UserNotFound,
-
-    #[error("Email already exists in database")]
-    EmailConflict,
-
-    #[error("Database error")]
-    Database,
-}
-
-impl From<diesel::result::Error> for Error {
-    fn from(value: diesel::result::Error) -> Self {
-        log::error!("Database error: {}", value);
-        Error::Database
+        false => Err(model::Error::UserNotFound),
     }
 }

@@ -1,5 +1,6 @@
 mod user;
 mod auth;
+mod group;
 
 use crate::dto::error::ErrorDTO;
 use actix_web::{get, web};

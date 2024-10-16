@@ -6,21 +6,24 @@ use serde::Serialize;
 
 #[derive(thiserror::Error, Serialize, Debug)]
 pub enum ErrorDTO {
+    // ========= common errors =========
     #[error("Internal server error")]
     InternalServerError,
 
     #[error("Wrong data format")]
     WrongDataFormat,
 
+    #[error(transparent)]
+    Validation(#[from] validator::ValidationErrors),
+
+    // ========= auth errors =========
     #[error("Invalid credentials")]
     InvalidCredentials,
 
     #[error("Invalid token")]
     InvalidToken,
 
-    #[error(transparent)]
-    Validation(#[from] validator::ValidationErrors),
-
+    // ========= user errors =========
     #[error("User not found in database")]
     UserNotFound,
 
