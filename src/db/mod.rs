@@ -6,15 +6,16 @@ use std::env;
 
 pub mod schema;
 
-pub type Pool = r2d2::Pool<ConnectionManager<PgConnection>>;
-pub type PooledConnection = r2d2::PooledConnection<ConnectionManager<PgConnection>>;
+pub type DbConnection = PgConnection;
+pub type DbPool = r2d2::Pool<ConnectionManager<DbConnection>>;
+pub type DbPooledConnection = r2d2::PooledConnection<ConnectionManager<DbConnection>>;
 
-pub fn establish_connection() -> Pool {
+pub fn establish_connection() -> DbPool {
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    let manager = ConnectionManager::<PgConnection>::new(database_url);
+    let manager = ConnectionManager::<DbConnection>::new(database_url);
 
-    Pool::builder()
+    DbPool::builder()
         .build(manager)
         .expect("Failed to create pool.")
 }

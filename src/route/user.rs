@@ -1,8 +1,10 @@
-use crate::{db, model};
+use crate::db::DbPool;
 use crate::dto::error::ErrorDTO;
 use crate::dto::user::{PrivateProfile, PublicProfile, UpdateProfileRequest};
-use crate::middleware::auth::AuthInfo;
+use crate::middleware::auth::strong::StrongAuthGuard;
+use crate::middleware::auth::AuthGuard;
 use crate::middleware::validation::ValidatedJson;
+use crate::model;
 use crate::model::user;
 use crate::model::user::{UpdateUser, User};
 use crate::util::sync::block_for_db;
@@ -18,7 +20,10 @@ pub fn config_routes(cfg: &mut web::ServiceConfig) {
 }
 
 #[get("/users/me")]
-async fn get_private_profile(auth: AuthInfo, db_pool: web::Data<db::Pool>) -> Result<Json<PublicProfile>, ErrorDTO> {
+async fn get_private_profile(
+    auth: AuthGuard,
+    db_pool: web::Data<DbPool>,
+) -> Result<Json<PublicProfile>, ErrorDTO> {
     let user_id = auth.user_id;
 
     let user = block_for_db(&db_pool, move |mut db_conn| {
@@ -34,8 +39,8 @@ async fn get_private_profile(auth: AuthInfo, db_pool: web::Data<db::Pool>) -> Re
 
 #[get("/users/{user_id}")]
 async fn get_public_profile(
-    _auth: AuthInfo,
-    db_pool: web::Data<db::Pool>,
+    _auth: AuthGuard,
+    db_pool: web::Data<DbPool>,
     user_id: web::Path<Uuid>,
 ) -> Result<Json<PublicProfile>, ErrorDTO> {
     let user_id = user_id.into_inner();
@@ -53,8 +58,8 @@ async fn get_public_profile(
 
 #[put("/users/me/update")]
 async fn update_profile(
-    auth: AuthInfo,
-    db_pool: web::Data<db::Pool>,
+    auth: StrongAuthGuard,
+    db_pool: web::Data<DbPool>,
     request: ValidatedJson<UpdateProfileRequest>,
 ) -> Result<Json<PrivateProfile>, ErrorDTO> {
     let user_id = auth.user_id;
@@ -71,7 +76,7 @@ async fn update_profile(
     let user = block_for_db(&db_pool, move |mut db_conn| -> Result<User, ErrorDTO> {
         user::update(&user_id, &update_data, &mut db_conn).map_err(|error| {
             if let model::Error::UserNotFound = error {
-                log::warn!("Authenticated user not found in database");
+                log::warn!("Authenticated user {} not found  in database", auth.user_id);
             }
             ErrorDTO::InternalServerError
         })
@@ -83,22 +88,13 @@ async fn update_profile(
 
 #[delete("/users/me/delete")]
 async fn delete_user(
-    auth: AuthInfo,
-    db_pool: web::Data<db::Pool>,
-    password: String, // authenticated user have to provide his password
+    auth: StrongAuthGuard,
+    db_pool: web::Data<DbPool>,
 ) -> Result<HttpResponse, ErrorDTO> {
     block_for_db(&db_pool, move |mut db_conn| -> Result<(), ErrorDTO> {
-        let user = user::get(&auth.user_id, &mut db_conn).map_err(|error| match error {
-            model::Error::UserNotFound => ErrorDTO::InvalidCredentials,
-            _ => ErrorDTO::InternalServerError,
-        })?;
-
-        // password verification
-        bcrypt::verify(password, &user.password).map_err(|_| ErrorDTO::InvalidCredentials)?;
-
-        user::delete(&auth.user_id, &mut db_conn).map_err(|error|  {
+        user::delete(&auth.user_id, &mut db_conn).map_err(|error| {
             if let model::Error::UserNotFound = error {
-                log::error!("Data incoherence, user {} found doesn't exists", user.id);
+                log::warn!("Authenticated user {} not found", auth.user_id);
             }
 
             ErrorDTO::InternalServerError

@@ -4,6 +4,7 @@ use crate::model::user::User;
 use derive_builder::Builder;
 use diesel::prelude::*;
 use uuid::Uuid;
+use crate::db::DbConnection;
 
 #[derive(Queryable, Insertable, Clone, Debug)]
 #[diesel(table_name = crate::db::schema::groups)]
@@ -36,7 +37,7 @@ impl UpdateGroup {
 
 pub fn create(
     creation_data: CreateGroup,
-    db_conn: &mut PgConnection,
+    db_conn: &mut DbConnection,
 ) -> Result<Group, model::Error> {
     db_conn.transaction(|conn| {
         // check if owner exists
@@ -63,14 +64,14 @@ pub fn create(
     })
 }
 
-pub fn get(group_id: &Uuid, db_conn: &mut PgConnection) -> Result<Group, model::Error> {
+pub fn get(group_id: &Uuid, db_conn: &mut DbConnection) -> Result<Group, model::Error> {
     let group = groups::table.find(group_id).first(db_conn)?;
     Ok(group)
 }
 
 pub fn update(
     update_data: &UpdateGroup,
-    db_conn: &mut PgConnection,
+    db_conn: &mut DbConnection,
 ) -> Result<Group, model::Error> {
     db_conn.transaction(|conn| {
         if let Some(new_owner_id) = update_data.owner_id {
@@ -94,7 +95,7 @@ pub fn update(
     })
 }
 
-pub fn delete(group_id: &Uuid, db_conn: &mut PgConnection) -> Result<(), model::Error> {
+pub fn delete(group_id: &Uuid, db_conn: &mut DbConnection) -> Result<(), model::Error> {
     let deleted = diesel::delete(groups::table)
         .filter(groups::id.eq(group_id))
         .execute(db_conn)?;

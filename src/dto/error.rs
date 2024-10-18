@@ -17,11 +17,8 @@ pub enum ErrorDTO {
     Validation(#[from] validator::ValidationErrors),
 
     // ========= auth errors =========
-    #[error("Invalid credentials")]
-    InvalidCredentials,
-
     #[error("Invalid token")]
-    InvalidToken,
+    Unauthorized,
 
     // ========= user errors =========
     #[error("User not found in database")]
@@ -36,7 +33,7 @@ impl ResponseError for ErrorDTO {
         match self {
             Self::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::WrongDataFormat => StatusCode::BAD_REQUEST,
-            Self::InvalidCredentials | Self::InvalidToken => StatusCode::UNAUTHORIZED,
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Validation(_error) => StatusCode::BAD_REQUEST,
             Self::UserNotFound => StatusCode::NOT_FOUND,
             Self::UserEmailConflict => StatusCode::CONFLICT,

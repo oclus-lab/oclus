@@ -1,4 +1,5 @@
 use crate::db::schema::users;
+use crate::db::DbConnection;
 use crate::model;
 use chrono::NaiveDateTime;
 use derive_builder::Builder;
@@ -25,18 +26,14 @@ pub struct CreateUser {
     pub registration_date: NaiveDateTime,
 }
 
-#[derive(AsChangeset, Builder, Clone, Debug)]
+#[derive(AsChangeset, Builder, Default, Clone, Debug)]
 #[diesel(table_name = crate::db::schema::users)]
+#[builder(default)]
 pub struct UpdateUser {
-    #[builder(default)]
     pub email: Option<String>,
-    #[builder(default)]
     pub username: Option<String>,
-    #[builder(default)]
     pub password: Option<String>,
-    #[builder(default)]
     pub refresh_token: Option<Option<String>>,
-    #[builder(default)]
     pub registration_date: Option<NaiveDateTime>,
 }
 
@@ -46,7 +43,7 @@ impl UpdateUser {
     }
 }
 
-pub fn create(creation_data: CreateUser, db_conn: &mut PgConnection) -> Result<User, model::Error> {
+pub fn create(creation_data: CreateUser, db_conn: &mut DbConnection) -> Result<User, model::Error> {
     db_conn.transaction(|conn| {
         // check for email conflict
         let email_exists = diesel::select(diesel::dsl::exists(
@@ -68,13 +65,15 @@ pub fn create(creation_data: CreateUser, db_conn: &mut PgConnection) -> Result<U
             registration_date: creation_data.registration_date,
         };
 
-        diesel::insert_into(users::table).values(&user).execute(conn)?;
+        diesel::insert_into(users::table)
+            .values(&user)
+            .execute(conn)?;
 
         Ok(user)
     })
 }
 
-pub fn get(user_id: &Uuid, db_conn: &mut PgConnection) -> Result<User, model::Error> {
+pub fn get(user_id: &Uuid, db_conn: &mut DbConnection) -> Result<User, model::Error> {
     users::table
         .find(user_id)
         .get_result(db_conn)
@@ -84,7 +83,7 @@ pub fn get(user_id: &Uuid, db_conn: &mut PgConnection) -> Result<User, model::Er
         })
 }
 
-pub fn get_by_email(email: &str, db_conn: &mut PgConnection) -> Result<User, model::Error> {
+pub fn get_by_email(email: &str, db_conn: &mut DbConnection) -> Result<User, model::Error> {
     users::table
         .filter(users::email.eq(email))
         .get_result(db_conn)
@@ -94,7 +93,11 @@ pub fn get_by_email(email: &str, db_conn: &mut PgConnection) -> Result<User, mod
         })
 }
 
-pub fn update(user_id: &Uuid, update_data: &UpdateUser, db_conn: &mut PgConnection) -> Result<User, model::Error> {
+pub fn update(
+    user_id: &Uuid,
+    update_data: &UpdateUser,
+    db_conn: &mut DbConnection,
+) -> Result<User, model::Error> {
     diesel::update(users::table.find(user_id))
         .set(update_data)
         .get_result(db_conn)
@@ -104,7 +107,7 @@ pub fn update(user_id: &Uuid, update_data: &UpdateUser, db_conn: &mut PgConnecti
         })
 }
 
-pub fn delete(user_id: &Uuid, db_conn: &mut PgConnection) -> Result<(), model::Error> {
+pub fn delete(user_id: &Uuid, db_conn: &mut DbConnection) -> Result<(), model::Error> {
     let deleted = diesel::delete(users::table.find(user_id)).execute(db_conn)?;
     match deleted > 0 {
         true => Ok(()),
