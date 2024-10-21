@@ -75,11 +75,11 @@ where
     }
 }
 
-pub struct StrongAuthMwFactory {
+pub struct StrongAuthMiddlewareFactory {
     pub(crate) db_pool: DbPool,
 }
 
-impl<S, B> Transform<S, ServiceRequest> for StrongAuthMwFactory
+impl<S, B> Transform<S, ServiceRequest> for StrongAuthMiddlewareFactory
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,

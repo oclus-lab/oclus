@@ -61,9 +61,9 @@ where
     }
 }
 
-pub struct AuthMwFactory;
+pub struct AuthMiddlewareFactory;
 
-impl<S, B> Transform<S, ServiceRequest> for AuthMwFactory
+impl<S, B> Transform<S, ServiceRequest> for AuthMiddlewareFactory
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,

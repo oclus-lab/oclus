@@ -1,5 +1,5 @@
-use crate::middleware::auth::strong::StrongAuthMwFactory;
-use crate::middleware::auth::AuthMwFactory;
+use crate::middleware::auth::strong::StrongAuthMiddlewareFactory;
+use crate::middleware::auth::AuthMiddlewareFactory;
 use actix_web::{web, App, HttpServer};
 
 mod db;
@@ -17,8 +17,8 @@ async fn main() -> Result<(), std::io::Error> {
     let db_pool = db::establish_connection();
 
     HttpServer::new(move || {
-        let auth_mw = AuthMwFactory;
-        let strong_auth_mw = StrongAuthMwFactory {
+        let auth_mw = AuthMiddlewareFactory;
+        let strong_auth_mw = StrongAuthMiddlewareFactory {
             db_pool: db_pool.clone(),
         };
 
