@@ -1,4 +1,4 @@
-use crate::dto::error::ErrorDTO;
+use crate::dto::error::ErrorDto;
 use crate::util::jwt::{decode_token, TokenType};
 use actix_web::dev::{forward_ready, Payload, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::http::header;
@@ -17,11 +17,11 @@ struct AuthStatus {
 }
 
 /// Middleware responsible for checking jwt if provided in request headers
-pub struct AuthMiddleware<S> {
+pub struct AuthenticatorMiddleware<S> {
     service: Rc<S>,
 }
 
-impl<S, B> Service<ServiceRequest> for AuthMiddleware<S>
+impl<S, B> Service<ServiceRequest> for AuthenticatorMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
@@ -61,9 +61,9 @@ where
     }
 }
 
-pub struct AuthMiddlewareFactory;
+pub struct Authenticator;
 
-impl<S, B> Transform<S, ServiceRequest> for AuthMiddlewareFactory
+impl<S, B> Transform<S, ServiceRequest> for Authenticator
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
@@ -71,12 +71,12 @@ where
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type Transform = AuthMiddleware<S>;
+    type Transform = AuthenticatorMiddleware<S>;
     type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(AuthMiddleware {
+        ready(Ok(AuthenticatorMiddleware {
             service: Rc::new(service),
         }))
     }
@@ -88,7 +88,7 @@ pub struct AuthGuard {
 }
 
 impl FromRequest for AuthGuard {
-    type Error = ErrorDTO;
+    type Error = ErrorDto;
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
@@ -99,7 +99,7 @@ impl FromRequest for AuthGuard {
             Some(auth_status) => Ok(AuthGuard {
                 user_id: auth_status.user_id,
             }),
-            None => Err(ErrorDTO::Unauthorized),
+            None => Err(ErrorDto::InvalidCredentials),
         };
 
         ready(result)

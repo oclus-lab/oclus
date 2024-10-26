@@ -1,23 +1,24 @@
 use crate::db::DbPool;
-use crate::dto::error::ErrorDTO;
+use crate::dto::error::ErrorDto;
 use crate::middleware::auth::AuthStatus;
 use crate::model;
 use crate::model::user;
-use crate::util::sync::block_for_db;
+use crate::util::db::block_for_db;
 use actix_web::dev::{forward_ready, Payload, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::{Error, FromRequest, HttpMessage, HttpRequest};
 use std::future::{ready, Future, Ready};
 use std::pin::Pin;
 use std::rc::Rc;
 use uuid::Uuid;
+use crate::util::crypto::verify_password;
 
 /// Middleware responsible for checking user password if provided in request headers
-pub struct StrongAuthMiddleware<S> {
+pub struct StrongAuthenticatorMiddleware<S> {
     service: Rc<S>,
     db_pool: DbPool,
 }
 
-impl<S, B> Service<ServiceRequest> for StrongAuthMiddleware<S>
+impl<S, B> Service<ServiceRequest> for StrongAuthenticatorMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
@@ -52,7 +53,7 @@ where
                     {
                         Ok(user) => {
                             // verify password
-                            if let Ok(true) = bcrypt::verify(password, &user.password) {
+                            if verify_password(password, &user.password) {
                                 // update auth status
                                 request.extensions_mut().insert(AuthStatus {
                                     user_id: auth_status.user_id,
@@ -61,10 +62,10 @@ where
                             }
                         }
                         Err(err) => {
-                            if let model::Error::UserNotFound = err {
+                            if let model::Error::NotFound = err {
                                 log::warn!("Authenticated user {} not found", auth_status.user_id);
                             }
-                            return Err(ErrorDTO::InternalServerError.into());
+                            return Err(ErrorDto::InternalServerError.into());
                         }
                     }
                 }
@@ -75,11 +76,17 @@ where
     }
 }
 
-pub struct StrongAuthMiddlewareFactory {
-    pub(crate) db_pool: DbPool,
+pub struct StrongAuthenticator {
+    db_pool: DbPool,
 }
 
-impl<S, B> Transform<S, ServiceRequest> for StrongAuthMiddlewareFactory
+impl StrongAuthenticator {
+    pub fn new(db_pool: DbPool) -> Self {
+        Self { db_pool }
+    }
+}
+
+impl<S, B> Transform<S, ServiceRequest> for StrongAuthenticator
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
@@ -87,12 +94,12 @@ where
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type Transform = StrongAuthMiddleware<S>;
+    type Transform = StrongAuthenticatorMiddleware<S>;
     type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(StrongAuthMiddleware {
+        ready(Ok(StrongAuthenticatorMiddleware {
             db_pool: self.db_pool.clone(),
             service: Rc::new(service),
         }))
@@ -105,7 +112,7 @@ pub struct StrongAuthGuard {
 }
 
 impl FromRequest for StrongAuthGuard {
-    type Error = ErrorDTO;
+    type Error = ErrorDto;
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
@@ -116,7 +123,7 @@ impl FromRequest for StrongAuthGuard {
             Some(auth_status) if auth_status.strong => Ok(StrongAuthGuard {
                 user_id: auth_status.user_id,
             }),
-            _ => Err(ErrorDTO::Unauthorized),
+            _ => Err(ErrorDto::InvalidCredentials),
         };
 
         ready(result)

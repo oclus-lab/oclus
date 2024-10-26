@@ -18,7 +18,7 @@ pub struct User {
 }
 
 #[derive(Clone, Debug)]
-pub struct CreateUser {
+pub struct UserCreationData {
     pub email: String,
     pub username: String,
     pub password: String,
@@ -29,21 +29,24 @@ pub struct CreateUser {
 #[derive(AsChangeset, Builder, Default, Clone, Debug)]
 #[diesel(table_name = crate::db::schema::users)]
 #[builder(default)]
-pub struct UpdateUser {
-    pub email: Option<String>,
+pub struct UserUpdateData {
     pub username: Option<String>,
+    pub email: Option<String>,
     pub password: Option<String>,
     pub refresh_token: Option<Option<String>>,
     pub registration_date: Option<NaiveDateTime>,
 }
 
-impl UpdateUser {
-    pub fn builder() -> UpdateUserBuilder {
-        UpdateUserBuilder::default()
+impl UserUpdateData {
+    pub fn builder() -> UserUpdateDataBuilder {
+        UserUpdateDataBuilder::default()
     }
 }
 
-pub fn create(creation_data: CreateUser, db_conn: &mut DbConnection) -> Result<User, model::Error> {
+pub fn create(
+    creation_data: UserCreationData,
+    db_conn: &mut DbConnection,
+) -> Result<User, model::Error> {
     db_conn.transaction(|conn| {
         // check for email conflict
         let email_exists = diesel::select(diesel::dsl::exists(
@@ -52,7 +55,7 @@ pub fn create(creation_data: CreateUser, db_conn: &mut DbConnection) -> Result<U
         .get_result::<bool>(conn)?;
 
         if email_exists {
-            return Err(model::Error::UserEmailConflict);
+            return Err(model::Error::Conflict(String::from("email")));
         }
 
         let id = Uuid::now_v7();
@@ -73,12 +76,12 @@ pub fn create(creation_data: CreateUser, db_conn: &mut DbConnection) -> Result<U
     })
 }
 
-pub fn get(user_id: &Uuid, db_conn: &mut DbConnection) -> Result<User, model::Error> {
+pub fn get(id: &Uuid, db_conn: &mut DbConnection) -> Result<User, model::Error> {
     users::table
-        .find(user_id)
+        .find(id)
         .get_result(db_conn)
         .map_err(|error| match error {
-            diesel::result::Error::NotFound => model::Error::UserNotFound,
+            diesel::result::Error::NotFound => model::Error::NotFound,
             _ => error.into(),
         })
 }
@@ -88,29 +91,29 @@ pub fn get_by_email(email: &str, db_conn: &mut DbConnection) -> Result<User, mod
         .filter(users::email.eq(email))
         .get_result(db_conn)
         .map_err(|error| match error {
-            diesel::result::Error::NotFound => model::Error::UserNotFound,
+            diesel::result::Error::NotFound => model::Error::NotFound,
             _ => error.into(),
         })
 }
 
 pub fn update(
-    user_id: &Uuid,
-    update_data: &UpdateUser,
+    id: &Uuid,
+    update_data: &UserUpdateData,
     db_conn: &mut DbConnection,
 ) -> Result<User, model::Error> {
-    diesel::update(users::table.find(user_id))
+    diesel::update(users::table.find(id))
         .set(update_data)
         .get_result(db_conn)
         .map_err(|error| match error {
-            diesel::result::Error::NotFound => model::Error::UserNotFound,
+            diesel::result::Error::NotFound => model::Error::NotFound,
             _ => error.into(),
         })
 }
 
-pub fn delete(user_id: &Uuid, db_conn: &mut DbConnection) -> Result<(), model::Error> {
-    let deleted = diesel::delete(users::table.find(user_id)).execute(db_conn)?;
+pub fn delete(id: &Uuid, db_conn: &mut DbConnection) -> Result<(), model::Error> {
+    let deleted = diesel::delete(users::table.find(id)).execute(db_conn)?;
     match deleted > 0 {
         true => Ok(()),
-        false => Err(model::Error::UserNotFound),
+        false => Err(model::Error::NotFound),
     }
 }

@@ -1,26 +1,30 @@
-use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use validator::Validate;
 
 const USERNAME_MIN_LEN: u64 = 4;
 const USERNAME_MAX_LEN: u64 = 32;
-static USERNAME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"[0-9A-Za-z-_]").unwrap());
-const PASSWORD_MIN_LEN: u64 = 16;
+const PASSWORD_MIN_LEN: u64 = 12;
 
-#[derive(Deserialize, Validate, Clone, Debug)]
+fn username_regex() -> &'static Regex {
+    static USERNAME_REGEX: OnceLock<Regex> = OnceLock::new();
+    USERNAME_REGEX.get_or_init(|| Regex::new(r"[0-9A-Za-z-_]").unwrap())
+}
+
+#[derive(Serialize, Deserialize, Validate, Clone, Debug)]
 pub struct RegisterRequest {
     #[validate(email)]
     pub email: String,
 
-    #[validate(length(min = USERNAME_MIN_LEN, max = USERNAME_MAX_LEN), regex(path = *USERNAME_REGEX))]
+    #[validate(length(min = USERNAME_MIN_LEN, max = USERNAME_MAX_LEN), regex(path = username_regex()))]
     pub username: String,
 
     #[validate(length(min = PASSWORD_MIN_LEN))]
     pub password: String,
 }
 
-#[derive(Deserialize, Validate, Clone, Debug)]
+#[derive(Serialize, Deserialize, Validate, Clone, Debug)]
 pub struct LoginRequest {
     #[validate(email)]
     pub email: String,

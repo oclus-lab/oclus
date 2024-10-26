@@ -1,15 +1,16 @@
-use crate::db::DbPool;
+use crate::db::{DbConnection, DbPool};
 use crate::dto::auth::{LoginRequest, RegisterRequest, TokenPair};
-use crate::dto::error::ErrorDTO;
+use crate::dto::error::ErrorDto;
 use crate::middleware::validation::ValidatedJson;
 use crate::model;
 use crate::model::user;
-use crate::model::user::*;
+use crate::model::user::{UserCreationData, UserUpdateData};
+use crate::util::crypto::{hash_password, verify_password};
+use crate::util::db::{block_for_db, block_for_trans_db};
 use crate::util::jwt::generate_token_pair;
-use crate::util::sync::block_for_db;
 use actix_web::{post, web};
+use actix_web::web::Json;
 use chrono::Utc;
-use diesel::PgConnection;
 use uuid::Uuid;
 
 pub fn config_routes(cfg: &mut web::ServiceConfig) {
@@ -21,102 +22,81 @@ pub fn config_routes(cfg: &mut web::ServiceConfig) {
 async fn register(
     request: ValidatedJson<RegisterRequest>,
     db_pool: web::Data<DbPool>,
-) -> Result<web::Json<TokenPair>, ErrorDTO> {
+) -> Result<Json<TokenPair>, ErrorDto> {
     let request = request.into_inner();
-    let password_hash =
-        bcrypt::hash(request.password, bcrypt::DEFAULT_COST).expect("Failed to hash password");
 
-    let creation_data = CreateUser {
+    let creation_data = UserCreationData {
         email: request.email,
         username: request.username.clone(),
-        password: password_hash,
+        password: hash_password(&request.password),
         refresh_token: None,
         registration_date: Utc::now().naive_utc(),
     };
 
-    let token_pair = block_for_db(
-        &db_pool,
-        move |mut db_conn| -> Result<TokenPair, ErrorDTO> {
-            let user = create(creation_data, &mut db_conn).map_err(|error| match error {
-                model::Error::UserEmailConflict => ErrorDTO::UserEmailConflict,
-                _ => ErrorDTO::InternalServerError,
-            })?;
+    let token_pair = block_for_trans_db(&db_pool, move |mut conn| {
+        let user = user::create(creation_data, &mut conn)?;
 
-            let token_pair = generate_token_pair(user.id);
+        let token_pair = generate_token_pair(user.id);
 
-            // save the refresh token in db
-            save_refresh_token(&user.id, token_pair.refresh_token.clone(), &mut db_conn).map_err(
-                |error| {
-                    if let model::Error::UserNotFound = error {
-                        log::error!(
-                            "Data incoherence, created user {} doesn't exists anymore",
-                            user.id
-                        );
-                    }
-                    ErrorDTO::InternalServerError
-                },
-            )?;
+        // save the refresh token in db
+        save_refresh_token(&user.id, token_pair.refresh_token.clone(), &mut conn)?;
 
-            Ok(token_pair)
-        },
-    )
-    .await??;
+        Ok(token_pair)
+    })
+    .await?
+    .map_err(|error| match error {
+        model::Error::Conflict(field) => ErrorDto::Conflict(field),
+        _ => ErrorDto::InternalServerError,
+    })?;
 
-    Ok(web::Json(token_pair))
+    Ok(Json(token_pair))
 }
 
 #[post("/auth/login")]
 async fn login(
     request: ValidatedJson<LoginRequest>,
     db_pool: web::Data<DbPool>,
-) -> Result<web::Json<TokenPair>, ErrorDTO> {
+) -> Result<Json<TokenPair>, ErrorDto> {
     let request = request.into_inner();
 
-    let token_pair = block_for_db(
-        &db_pool,
-        move |mut db_conn| -> Result<TokenPair, ErrorDTO> {
-            let user =
-                user::get_by_email(&request.email, &mut db_conn).map_err(|error| match error {
-                    model::Error::UserNotFound => ErrorDTO::Unauthorized,
-                    _ => ErrorDTO::InternalServerError,
-                })?;
+    let user = block_for_db(&db_pool, move |mut conn| {
+        user::get_by_email(&request.email, &mut conn)
+    })
+    .await?
+    .map_err(|err| match err {
+        model::Error::NotFound => ErrorDto::InvalidCredentials,
+        _ => ErrorDto::InternalServerError,
+    })?;
 
-            bcrypt::verify(&request.password, &user.password)
-                .map_err(|_error| ErrorDTO::Unauthorized)?;
+    if !verify_password(&request.password, &user.password) {
+        return Err(ErrorDto::InvalidCredentials);
+    }
 
-            let token_pair = generate_token_pair(user.id);
+    let token_pair = generate_token_pair(user.id);
 
-            // save the new refresh token in db
-            save_refresh_token(&user.id, token_pair.refresh_token.clone(), &mut db_conn).map_err(
-                |error| {
-                    if let model::Error::UserNotFound = error {
-                        log::error!(
-                            "Data incoherence, previously found user {} doesn't exists anymore",
-                            user.id
-                        );
-                    }
-                    ErrorDTO::InternalServerError
-                },
-            )?;
+    let refresh_token = token_pair.refresh_token.clone();
+    block_for_db(&db_pool, move |mut conn| {
+        save_refresh_token(&user.id, refresh_token, &mut conn)
+    })
+    .await?
+    .map_err(|err| {
+        log::error!("Error saving refresh token {:?}", err);
+        ErrorDto::InternalServerError
+    })?;
 
-            Ok(token_pair)
-        },
-    )
-    .await??;
-
-    Ok(web::Json(token_pair))
+    Ok(Json(token_pair))
 }
 
 fn save_refresh_token(
     user_id: &Uuid,
     refresh_token: String,
-    db_conn: &mut PgConnection,
+    db_conn: &mut DbConnection,
 ) -> Result<(), model::Error> {
-    let update_data = UpdateUser::builder()
+    let update_data = UserUpdateData::builder()
         .refresh_token(Some(Some(refresh_token)))
         .build()
         .unwrap();
 
-    update(user_id, &update_data, db_conn)?;
+    user::update(user_id, &update_data, db_conn)?;
     Ok(())
 }

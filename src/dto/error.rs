@@ -2,41 +2,37 @@ use actix_web::error::BlockingError;
 use actix_web::http::StatusCode;
 use actix_web::web::Json;
 use actix_web::{HttpResponse, ResponseError};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(thiserror::Error, Serialize, Debug)]
-pub enum ErrorDTO {
+#[derive(thiserror::Error, Serialize, Deserialize, Debug)]
+pub enum ErrorDto {
     // ========= common errors =========
     #[error("Internal server error")]
     InternalServerError,
 
     #[error("Wrong data format")]
-    WrongDataFormat,
-
-    #[error(transparent)]
-    Validation(#[from] validator::ValidationErrors),
+    InvalidData,
 
     // ========= auth errors =========
     #[error("Invalid token")]
-    Unauthorized,
+    InvalidCredentials,
 
     // ========= user errors =========
     #[error("User not found in database")]
-    UserNotFound,
+    NotFound,
 
     #[error("Email already exists in database")]
-    UserEmailConflict,
+    Conflict(String),
 }
 
-impl ResponseError for ErrorDTO {
+impl ResponseError for ErrorDto {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::WrongDataFormat => StatusCode::BAD_REQUEST,
-            Self::Unauthorized => StatusCode::UNAUTHORIZED,
-            Self::Validation(_error) => StatusCode::BAD_REQUEST,
-            Self::UserNotFound => StatusCode::NOT_FOUND,
-            Self::UserEmailConflict => StatusCode::CONFLICT,
+            Self::InvalidData => StatusCode::BAD_REQUEST,
+            Self::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Conflict(_field) => StatusCode::CONFLICT,
         }
     }
 
@@ -45,7 +41,7 @@ impl ResponseError for ErrorDTO {
     }
 }
 
-impl From<BlockingError> for ErrorDTO {
+impl From<BlockingError> for ErrorDto {
     fn from(value: BlockingError) -> Self {
         log::error!("{}", value);
         Self::InternalServerError
