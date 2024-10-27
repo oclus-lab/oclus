@@ -1,4 +1,4 @@
-use crate::model::user::User;
+use crate::db::model::user::User;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -15,7 +15,7 @@ pub struct PrivateProfile {
     pub id: Uuid,
     pub username: String,
     pub email: String,
-    pub registration_date: DateTime<Utc>,
+    pub registered_on: DateTime<Utc>,
 }
 
 #[derive(Deserialize, Validate, Clone, Debug)]
@@ -40,7 +40,7 @@ impl From<User> for PrivateProfile {
             id: value.id,
             username: value.username,
             email: value.email,
-            registration_date: value.registration_date.and_utc(),
+            registered_on: value.registered_on.and_utc(),
         }
     }
 }

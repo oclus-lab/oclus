@@ -1,13 +1,3 @@
-// @generated automatically by Diesel CLI.
-
-diesel::table! {
-    groups (id) {
-        id -> Uuid,
-        name -> Varchar,
-        owner_id -> Uuid,
-    }
-}
-
 diesel::table! {
     users (id) {
         id -> Uuid,
@@ -15,7 +5,16 @@ diesel::table! {
         username -> Varchar,
         password -> Varchar,
         refresh_token -> Nullable<Varchar>,
-        registration_date -> Timestamp,
+        registered_on -> Timestamp
+    }
+}
+
+diesel::table! {
+    groups (id) {
+        id -> Uuid,
+        name -> Varchar,
+        owner_id -> Uuid,
+        created_on -> Timestamp
     }
 }
 

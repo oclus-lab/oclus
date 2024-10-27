@@ -2,14 +2,14 @@ use crate::db::{DbConnection, DbPool};
 use crate::dto::auth::{LoginRequest, RegisterRequest, TokenPair};
 use crate::dto::error::ErrorDto;
 use crate::middleware::validation::ValidatedJson;
-use crate::model;
-use crate::model::user;
-use crate::model::user::{UserCreationData, UserUpdateData};
+use crate::db::model;
+use crate::db::model::user;
+use crate::db::model::user::{User, UserCreationData, UserUpdateData};
 use crate::util::crypto::{hash_password, verify_password};
 use crate::util::db::{block_for_db, block_for_trans_db};
 use crate::util::jwt::generate_token_pair;
-use actix_web::{post, web};
 use actix_web::web::Json;
+use actix_web::{post, web};
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -30,11 +30,11 @@ async fn register(
         username: request.username.clone(),
         password: hash_password(&request.password),
         refresh_token: None,
-        registration_date: Utc::now().naive_utc(),
+        registered_on: Utc::now().naive_utc(),
     };
 
     let token_pair = block_for_trans_db(&db_pool, move |mut conn| {
-        let user = user::create(creation_data, &mut conn)?;
+        let user = User::create(creation_data, &mut conn)?;
 
         let token_pair = generate_token_pair(user.id);
 
@@ -45,7 +45,7 @@ async fn register(
     })
     .await?
     .map_err(|error| match error {
-        model::Error::Conflict(field) => ErrorDto::Conflict(field),
+        model::DbError::Conflict(field) => ErrorDto::Conflict(field),
         _ => ErrorDto::InternalServerError,
     })?;
 
@@ -60,11 +60,11 @@ async fn login(
     let request = request.into_inner();
 
     let user = block_for_db(&db_pool, move |mut conn| {
-        user::get_by_email(&request.email, &mut conn)
+        User::get_by_email(&request.email, &mut conn)
     })
     .await?
     .map_err(|err| match err {
-        model::Error::NotFound => ErrorDto::InvalidCredentials,
+        model::DbError::NotFound => ErrorDto::InvalidCredentials,
         _ => ErrorDto::InternalServerError,
     })?;
 
@@ -91,12 +91,10 @@ fn save_refresh_token(
     user_id: &Uuid,
     refresh_token: String,
     db_conn: &mut DbConnection,
-) -> Result<(), model::Error> {
-    let update_data = UserUpdateData::builder()
-        .refresh_token(Some(Some(refresh_token)))
-        .build()
-        .unwrap();
+) -> Result<(), model::DbError> {
+    let mut user_update = UserUpdateData::default();
+    user_update.refresh_token = Some(Some(refresh_token));
 
-    user::update(user_id, &update_data, db_conn)?;
+    User::update(user_id, &user_update, db_conn)?;
     Ok(())
 }

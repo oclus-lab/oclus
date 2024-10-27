@@ -1,12 +1,11 @@
+use crate::db::model::user::{User, UserUpdateData};
+use crate::db::model::DbError;
 use crate::db::DbPool;
 use crate::dto::error::ErrorDto;
 use crate::dto::user::{PrivateProfile, PublicProfile, UpdateProfileRequest};
 use crate::middleware::auth::strong::StrongAuthGuard;
 use crate::middleware::auth::AuthGuard;
 use crate::middleware::validation::ValidatedJson;
-use crate::model;
-use crate::model::user;
-use crate::model::user::{UserUpdateData};
 use crate::util::db::block_for_db;
 use actix_web::web::Json;
 use actix_web::{delete, get, put, web, HttpResponse};
@@ -27,15 +26,15 @@ async fn get_private_profile(
     let user_id = auth.user_id;
 
     let user = block_for_db(&db_pool, move |mut db_conn| {
-        user::get(&user_id, &mut db_conn)
+        User::get(&user_id, &mut db_conn)
     })
     .await?
-    .map_err(|error| match error {
-        model::Error::NotFound => ErrorDto::NotFound,
-        _ => ErrorDto::InternalServerError,
-    })?;
+    .map_err(|_err| ErrorDto::InternalServerError)?;
 
-    Ok(Json(user.into()))
+    match user {
+        Some(user) => Ok(Json(user.into())),
+        None => Err(ErrorDto::NotFound),
+    }
 }
 
 #[get("/users/{user_id}")]
@@ -47,15 +46,15 @@ async fn get_public_profile(
     let user_id = user_id.into_inner();
 
     let user = block_for_db(&db_pool, move |mut db_conn| {
-        user::get(&user_id, &mut db_conn)
+        User::get(&user_id, &mut db_conn)
     })
     .await?
-    .map_err(|error| match error {
-        model::Error::NotFound => ErrorDto::NotFound,
-        _ => ErrorDto::InternalServerError,
-    })?;
+    .map_err(|_err| ErrorDto::InternalServerError)?;
 
-    Ok(Json(user.into()))
+    match user {
+        Some(user) => Ok(Json(user.into())),
+        None => Err(ErrorDto::NotFound),
+    }
 }
 
 #[put("/users/me/update")]
@@ -67,23 +66,24 @@ async fn update_profile(
     let user_id = auth.user_id;
     let request = request.into_inner();
 
-    let update_data = UserUpdateData {
-        email: request.email,
-        username: request.username,
-        password: None,
-        refresh_token: None,
-        registration_date: None,
-    };
+    let mut user_update = UserUpdateData::default();
+    user_update.email = request.email;
+    user_update.username = request.username;
 
     let user = block_for_db(&db_pool, move |mut db_conn| {
-        user::update(&user_id, &update_data, &mut db_conn)
+        User::update(&user_id, &user_update, &mut db_conn)
     })
     .await?
-    .map_err(|error| {
-        if let model::Error::NotFound = error {
+    .map_err(|err| match err {
+        DbError::NotFound => {
             log::warn!("Authenticated user {} not found", auth.user_id);
+            ErrorDto::NotFound
         }
-        ErrorDto::InternalServerError
+        DbError::Conflict(field) => ErrorDto::Conflict(field),
+        _ => {
+            log::error!("Error while updating user: {}", err);
+            ErrorDto::InternalServerError
+        }
     })?;
 
     Ok(Json(user.into()))
@@ -95,11 +95,11 @@ async fn delete_user(
     db_pool: web::Data<DbPool>,
 ) -> Result<HttpResponse, ErrorDto> {
     block_for_db(&db_pool, move |mut db_conn| {
-        user::delete(&auth.user_id, &mut db_conn)
+        User::delete(&auth.user_id, &mut db_conn)
     })
     .await?
     .map_err(|error| {
-        if let model::Error::NotFound = error {
+        if let DbError::NotFound = error {
             log::warn!("Authenticated user {} not found", auth.user_id);
         }
         ErrorDto::InternalServerError

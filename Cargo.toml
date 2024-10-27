@@ -20,7 +20,6 @@ uuid = { version = "1.10.0", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 jsonwebtoken = { version = "9.3" }
 bcrypt = { version = "0.15" }
-derive_builder = { version = "0.20" }
 
 [dev-dependencies]
 actix-http = {version = "3.9.0"}

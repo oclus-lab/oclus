@@ -7,7 +7,6 @@ use crate::db::DbPool;
 pub mod db; // public for integration tests
 pub mod dto;
 mod middleware;
-mod model;
 mod route;
 mod util;
 

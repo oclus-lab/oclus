@@ -4,6 +4,7 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use std::env;
 
 pub mod schema;
+pub mod model;
 
 pub type DbConnection = PgConnection;
 pub type DbPool = r2d2::Pool<ConnectionManager<DbConnection>>;
