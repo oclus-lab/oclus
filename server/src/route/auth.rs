@@ -3,7 +3,6 @@ use crate::dto::auth::{LoginRequest, RegisterRequest, TokenPair};
 use crate::dto::error::ErrorDto;
 use crate::middleware::validation::ValidatedJson;
 use crate::db::model;
-use crate::db::model::user;
 use crate::db::model::user::{User, UserCreationData, UserUpdateData};
 use crate::util::crypto::{hash_password, verify_password};
 use crate::util::db::{block_for_db, block_for_trans_db};
