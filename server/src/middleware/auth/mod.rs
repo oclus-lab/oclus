@@ -6,13 +6,12 @@ use actix_web::{Error, FromRequest, HttpMessage, HttpRequest};
 use std::future::{ready, Future, Ready};
 use std::pin::Pin;
 use std::rc::Rc;
-use uuid::Uuid;
 
 pub mod strong;
 
 #[derive(Clone, Default)]
 struct AuthStatus {
-    user_id: Uuid,
+    user_id: i64,
     strong: bool,
 }
 
@@ -84,7 +83,7 @@ where
 
 /// Used in route parameters when an authentication using token is required
 pub struct AuthGuard {
-    pub user_id: Uuid,
+    pub user_id: i64,
 }
 
 impl FromRequest for AuthGuard {

@@ -1,16 +1,11 @@
-mod user;
 mod auth;
+mod group;
+mod user;
 
-use crate::dto::error::ErrorDto;
-use actix_web::{get, web};
+use actix_web::web;
 
 pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(server_info);
     cfg.configure(auth::config_routes);
     cfg.configure(user::config_routes);
-}
-
-#[get("/")]
-async fn server_info() -> Result<String, ErrorDto> {
-    Ok("Oclus API\nVersion = 0.1.0".to_string())
+    cfg.configure(group::config_routes);
 }

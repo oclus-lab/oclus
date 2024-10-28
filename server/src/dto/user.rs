@@ -1,31 +1,55 @@
+use std::sync::OnceLock;
 use crate::db::model::user::User;
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Serialize, Clone, Debug)]
-pub struct PublicProfile {
-    pub id: Uuid,
-    pub username: String,
+const USERNAME_MIN_LEN: u64 = 4;
+const USERNAME_MAX_LEN: u64 = 32;
+const PASSWORD_MIN_LEN: u64 = 12;
+
+fn username_regex() -> &'static Regex {
+    static USERNAME_REGEX: OnceLock<Regex> = OnceLock::new();
+    USERNAME_REGEX.get_or_init(|| Regex::new(r"[0-9A-Za-z-_]").unwrap())
 }
 
-#[derive(Serialize, Clone, Debug)]
-pub struct PrivateProfile {
-    pub id: Uuid,
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UserDto {
+    pub id: i64,
     pub username: String,
     pub email: String,
     pub registered_on: DateTime<Utc>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UserPublicDto {
+    pub id: i64,
+    pub username: String,
+}
+
+#[derive(Serialize, Deserialize, Validate, Clone, Debug)]
+pub struct CreateUserRequest {
+    #[validate(email)]
+    pub email: String,
+
+    #[validate(length(min = USERNAME_MIN_LEN, max = USERNAME_MAX_LEN), regex(path = username_regex()))]
+    pub username: String,
+
+    #[validate(length(min = PASSWORD_MIN_LEN))]
+    pub password: String,
+}
+
 #[derive(Deserialize, Validate, Clone, Debug)]
-pub struct UpdateProfileRequest {
+pub struct UpdateUserRequest {
     #[validate(email)]
     pub email: Option<String>,
+
+    #[validate(length(min = USERNAME_MIN_LEN, max = USERNAME_MAX_LEN), regex(path = username_regex()))]
     pub username: Option<String>,
 }
 
-impl From<User> for PublicProfile {
+impl From<User> for UserPublicDto {
     fn from(value: User) -> Self {
         Self {
             id: value.id,
@@ -34,7 +58,7 @@ impl From<User> for PublicProfile {
     }
 }
 
-impl From<User> for PrivateProfile {
+impl From<User> for UserDto {
     fn from(value: User) -> Self {
         Self {
             id: value.id,

@@ -1,6 +1,5 @@
 use actix_http::Request;
 use actix_web::test;
-use oclus_server::app;
 use oclus_server::dto::auth::{LoginRequest, RegisterRequest};
 use oclus_server::dto::error::ErrorDto;
 
@@ -21,8 +20,7 @@ fn register_request(email: &str, username: &str, password: &str) -> Request {
 
 #[actix_web::test]
 pub async fn test_register() {
-    let db_pool = util::setup_test_db();
-    let app = test::init_service(app(db_pool)).await;
+    let app = util::test_app().await;
 
     let request = register_request("test@test.com", "test_username", "test_password");
 
@@ -32,8 +30,7 @@ pub async fn test_register() {
 
 #[actix_web::test]
 pub async fn test_register_data_validation() {
-    let db_pool = util::setup_test_db();
-    let app = test::init_service(app(db_pool)).await;
+    let app = util::test_app().await;
 
     // use a valid email
     let request = register_request("test@test.com", "test_username", "test_password");
@@ -52,8 +49,7 @@ pub async fn test_register_data_validation() {
 
 #[actix_web::test]
 pub async fn test_register_email_conflict() {
-    let db_pool = util::setup_test_db();
-    let app = test::init_service(app(db_pool)).await;
+    let app = util::test_app().await;
 
     let request = register_request("test@test.com", "test_username", "test_password");
     let response = test::call_service(&app, request).await;
@@ -75,7 +71,7 @@ pub async fn test_register_email_conflict() {
             assert_eq!(field, "email");
         }
         _ => {
-            panic!("Expected Conflict error, got something else");
+            panic!("expected ErrorDto::Conflict, got something else");
         }
     }
 }
@@ -94,8 +90,7 @@ fn login_request(email: &str, password: &str) -> Request {
 
 #[actix_web::test]
 pub async fn test_login() {
-    let db_pool = util::setup_test_db();
-    let app = test::init_service(app(db_pool)).await;
+    let app = util::test_app().await;
 
     let request = register_request("test@test.com", "test_username", "test_password");
     let response = test::call_service(&app, request).await;

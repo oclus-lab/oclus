@@ -3,7 +3,6 @@ use chrono::Utc;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::env;
-use uuid::Uuid;
 
 const AUTH_TOKEN_LIFETIME: i64 = 60 * 60; // 1 hour
 const REFRESH_TOKEN_LIFETIME: i64 = 60 * 60 * 24 * 30; // 1 month
@@ -15,19 +14,19 @@ pub enum TokenType {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Claims {
-    pub sub: Uuid,
+    pub sub: i64,
     pub iat: i64,
     pub exp: i64,
 }
 
-pub fn generate_token_pair(user_id: Uuid) -> TokenPair {
+pub fn generate_token_pair(user_id: i64) -> TokenPair {
     TokenPair {
-        auth_token: encode_token(user_id.clone(), &TokenType::Auth),
-        refresh_token: encode_token(user_id.clone(), &TokenType::Refresh),
+        auth_token: encode_token(user_id, &TokenType::Auth),
+        refresh_token: encode_token(user_id, &TokenType::Refresh),
     }
 }
 
-fn encode_token(user_id: Uuid, token_type: &TokenType) -> String {
+fn encode_token(user_id: i64, token_type: &TokenType) -> String {
     let now = Utc::now().timestamp();
 
     let lifetime = match token_type {

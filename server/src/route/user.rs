@@ -1,68 +1,57 @@
-use crate::db::model::user::{User, UserUpdateData};
-use crate::db::model::DbError;
+use crate::db::model::user::{User, UserCreationData, UserError, UserUpdateData};
 use crate::db::DbPool;
 use crate::dto::error::ErrorDto;
-use crate::dto::user::{PrivateProfile, PublicProfile, UpdateProfileRequest};
+use crate::dto::user::{CreateUserRequest, UpdateUserRequest, UserDto, UserPublicDto};
 use crate::middleware::auth::strong::StrongAuthGuard;
 use crate::middleware::auth::AuthGuard;
 use crate::middleware::validation::ValidatedJson;
+use crate::util::crypto::hash_password;
 use crate::util::db::block_for_db;
 use actix_web::web::Json;
-use actix_web::{delete, get, put, web, HttpResponse};
-use uuid::Uuid;
+use actix_web::{delete, get, post, put, web, HttpResponse};
+use chrono::Utc;
 
 pub fn config_routes(cfg: &mut web::ServiceConfig) {
-    cfg.service(get_private_profile);
-    cfg.service(get_public_profile);
-    cfg.service(update_profile);
+    cfg.service(create_user);
+    cfg.service(update_user);
     cfg.service(delete_user);
+    cfg.service(get_user);
+    cfg.service(get_user_public);
 }
 
-#[get("/users/me")]
-async fn get_private_profile(
-    auth: AuthGuard,
+#[post("/users/create")]
+async fn create_user(
     db_pool: web::Data<DbPool>,
-) -> Result<Json<PublicProfile>, ErrorDto> {
-    let user_id = auth.user_id;
+    request: ValidatedJson<CreateUserRequest>,
+) -> Result<Json<UserDto>, ErrorDto> {
+    let request = request.into_inner();
 
-    let user = block_for_db(&db_pool, move |mut db_conn| {
-        User::get(&user_id, &mut db_conn)
+    let creation_data = UserCreationData {
+        email: request.email,
+        username: request.username.clone(),
+        password: hash_password(&request.password),
+        refresh_token: None,
+        registered_on: Utc::now().naive_utc(),
+    };
+
+    let user = block_for_db(&db_pool, move |mut conn| {
+        User::create(&creation_data, &mut conn)
     })
     .await?
-    .map_err(|_err| ErrorDto::InternalServerError)?;
+    .map_err(|error| match error {
+        UserError::EmailConflict(_email) => ErrorDto::Conflict(String::from("email")),
+        _ => ErrorDto::Internal,
+    })?;
 
-    match user {
-        Some(user) => Ok(Json(user.into())),
-        None => Err(ErrorDto::NotFound),
-    }
-}
-
-#[get("/users/{user_id}")]
-async fn get_public_profile(
-    _auth: AuthGuard,
-    db_pool: web::Data<DbPool>,
-    user_id: web::Path<Uuid>,
-) -> Result<Json<PublicProfile>, ErrorDto> {
-    let user_id = user_id.into_inner();
-
-    let user = block_for_db(&db_pool, move |mut db_conn| {
-        User::get(&user_id, &mut db_conn)
-    })
-    .await?
-    .map_err(|_err| ErrorDto::InternalServerError)?;
-
-    match user {
-        Some(user) => Ok(Json(user.into())),
-        None => Err(ErrorDto::NotFound),
-    }
+    Ok(Json(user.into()))
 }
 
 #[put("/users/me/update")]
-async fn update_profile(
+async fn update_user(
     auth: StrongAuthGuard,
     db_pool: web::Data<DbPool>,
-    request: ValidatedJson<UpdateProfileRequest>,
-) -> Result<Json<PrivateProfile>, ErrorDto> {
+    request: ValidatedJson<UpdateUserRequest>,
+) -> Result<Json<UserDto>, ErrorDto> {
     let user_id = auth.user_id;
     let request = request.into_inner();
 
@@ -71,19 +60,16 @@ async fn update_profile(
     user_update.username = request.username;
 
     let user = block_for_db(&db_pool, move |mut db_conn| {
-        User::update(&user_id, &user_update, &mut db_conn)
+        User::update(user_id, &user_update, &mut db_conn)
     })
     .await?
     .map_err(|err| match err {
-        DbError::NotFound => {
-            log::warn!("Authenticated user {} not found", auth.user_id);
+        UserError::EmailConflict(email) => ErrorDto::Conflict(email),
+        UserError::UserNotFound(id) => {
+            log::warn!("authenticated user {} not found", id);
             ErrorDto::NotFound
         }
-        DbError::Conflict(field) => ErrorDto::Conflict(field),
-        _ => {
-            log::error!("Error while updating user: {}", err);
-            ErrorDto::InternalServerError
-        }
+        _ => ErrorDto::Internal,
     })?;
 
     Ok(Json(user.into()))
@@ -95,15 +81,53 @@ async fn delete_user(
     db_pool: web::Data<DbPool>,
 ) -> Result<HttpResponse, ErrorDto> {
     block_for_db(&db_pool, move |mut db_conn| {
-        User::delete(&auth.user_id, &mut db_conn)
+        User::delete(auth.user_id, &mut db_conn)
     })
     .await?
-    .map_err(|error| {
-        if let DbError::NotFound = error {
-            log::warn!("Authenticated user {} not found", auth.user_id);
+    .map_err(|err| match err {
+        UserError::UserNotFound(id) => {
+            log::warn!("authenticated user {} not found", id);
+            ErrorDto::NotFound
         }
-        ErrorDto::InternalServerError
+        _ => ErrorDto::Internal,
     })?;
 
     Ok(HttpResponse::Ok().finish())
+}
+
+#[get("/users/me")]
+async fn get_user(
+    auth: AuthGuard,
+    db_pool: web::Data<DbPool>,
+) -> Result<Json<UserPublicDto>, ErrorDto> {
+    let user_id = auth.user_id;
+
+    let user = block_for_db(&db_pool, move |mut db_conn| {
+        User::get(user_id, &mut db_conn)
+    })
+    .await??;
+
+    match user {
+        Some(user) => Ok(Json(user.into())),
+        None => Err(ErrorDto::NotFound),
+    }
+}
+
+#[get("/users/{user_id}")]
+async fn get_user_public(
+    _auth: AuthGuard,
+    db_pool: web::Data<DbPool>,
+    user_id: web::Path<i64>,
+) -> Result<Json<UserPublicDto>, ErrorDto> {
+    let user_id = user_id.into_inner();
+
+    let user = block_for_db(&db_pool, move |mut db_conn| {
+        User::get(user_id, &mut db_conn)
+    })
+    .await??;
+
+    match user {
+        Some(user) => Ok(Json(user.into())),
+        None => Err(ErrorDto::NotFound),
+    }
 }

@@ -10,6 +10,8 @@ pub type DbConnection = PgConnection;
 pub type DbPool = r2d2::Pool<ConnectionManager<DbConnection>>;
 pub type DbPooledConnection = r2d2::PooledConnection<ConnectionManager<DbConnection>>;
 
+pub type DieselError = diesel::result::Error;
+
 pub fn init_conn() -> DbPool {
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 

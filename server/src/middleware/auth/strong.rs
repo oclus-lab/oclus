@@ -1,15 +1,14 @@
+use crate::db::model::user::User;
 use crate::db::DbPool;
 use crate::dto::error::ErrorDto;
 use crate::middleware::auth::AuthStatus;
-use crate::db::model::user::User;
 use crate::util::crypto::verify_password;
 use crate::util::db::block_for_db;
 use actix_web::dev::{forward_ready, Payload, Service, ServiceRequest, ServiceResponse, Transform};
-use actix_web::{Error, FromRequest, HttpMessage, HttpRequest};
+use actix_web::{FromRequest, HttpMessage, HttpRequest};
 use std::future::{ready, Future, Ready};
 use std::pin::Pin;
 use std::rc::Rc;
-use uuid::Uuid;
 
 /// Middleware responsible for checking user password if provided in request headers
 pub struct StrongAuthenticatorMiddleware<S> {
@@ -19,13 +18,13 @@ pub struct StrongAuthenticatorMiddleware<S> {
 
 impl<S, B> Service<ServiceRequest> for StrongAuthenticatorMiddleware<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = actix_web::Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
     type Response = ServiceResponse<B>;
 
-    type Error = Error;
+    type Error = actix_web::Error;
 
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
@@ -46,7 +45,7 @@ where
                 {
                     // find user in database
                     match block_for_db(&db_pool, move |mut db_conn| {
-                        User::get(&auth_status.user_id, &mut db_conn)
+                        User::get(auth_status.user_id, &mut db_conn)
                     })
                     .await?
                     {
@@ -61,12 +60,9 @@ where
                             }
                         }
                         Ok(None) => {
-                            log::warn!("Authenticated user {} not found", auth_status.user_id);
+                            log::warn!("authenticated user {} not found", auth_status.user_id)
                         }
-                        Err(error) => {
-                            log::error!("Error occurred while getting user to verify password: {}", error);
-                            return Err(ErrorDto::InternalServerError.into())
-                        },
+                        Err(_err) => return Err(ErrorDto::Internal.into()),
                     }
                 }
             }
@@ -88,12 +84,12 @@ impl StrongAuthenticator {
 
 impl<S, B> Transform<S, ServiceRequest> for StrongAuthenticator
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = actix_web::Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
     type Response = ServiceResponse<B>;
-    type Error = Error;
+    type Error = actix_web::Error;
     type Transform = StrongAuthenticatorMiddleware<S>;
     type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
@@ -108,7 +104,7 @@ where
 
 /// Used in route parameters when an authentication using token + password is required
 pub struct StrongAuthGuard {
-    pub user_id: Uuid,
+    pub user_id: i64,
 }
 
 impl FromRequest for StrongAuthGuard {

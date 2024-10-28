@@ -1,71 +1,30 @@
-use crate::db::{DbConnection, DbPool};
-use crate::dto::auth::{LoginRequest, RegisterRequest, TokenPair};
+use crate::db::model::user::{User, UserUpdateData};
+use crate::db::DbPool;
+use crate::dto::auth::{LoginRequest, TokenPair};
 use crate::dto::error::ErrorDto;
-use crate::middleware::validation::ValidatedJson;
-use crate::db::model;
-use crate::db::model::user::{User, UserCreationData, UserUpdateData};
-use crate::util::crypto::{hash_password, verify_password};
-use crate::util::db::{block_for_db, block_for_trans_db};
-use crate::util::jwt::generate_token_pair;
+use crate::util::crypto::verify_password;
+use crate::util::db::block_for_db;
+use crate::util::jwt::{decode_token, generate_token_pair, TokenType};
 use actix_web::web::Json;
 use actix_web::{post, web};
-use chrono::Utc;
-use uuid::Uuid;
 
 pub fn config_routes(cfg: &mut web::ServiceConfig) {
-    cfg.service(register);
     cfg.service(login);
-}
-
-#[post("/auth/register")]
-async fn register(
-    request: ValidatedJson<RegisterRequest>,
-    db_pool: web::Data<DbPool>,
-) -> Result<Json<TokenPair>, ErrorDto> {
-    let request = request.into_inner();
-
-    let creation_data = UserCreationData {
-        email: request.email,
-        username: request.username.clone(),
-        password: hash_password(&request.password),
-        refresh_token: None,
-        registered_on: Utc::now().naive_utc(),
-    };
-
-    let token_pair = block_for_trans_db(&db_pool, move |mut conn| {
-        let user = User::create(creation_data, &mut conn)?;
-
-        let token_pair = generate_token_pair(user.id);
-
-        // save the refresh token in db
-        save_refresh_token(&user.id, token_pair.refresh_token.clone(), &mut conn)?;
-
-        Ok(token_pair)
-    })
-    .await?
-    .map_err(|error| match error {
-        model::DbError::Conflict(field) => ErrorDto::Conflict(field),
-        _ => ErrorDto::InternalServerError,
-    })?;
-
-    Ok(Json(token_pair))
+    cfg.service(refresh_auth);
 }
 
 #[post("/auth/login")]
 async fn login(
-    request: ValidatedJson<LoginRequest>,
+    request: Json<LoginRequest>,
     db_pool: web::Data<DbPool>,
 ) -> Result<Json<TokenPair>, ErrorDto> {
     let request = request.into_inner();
 
-    let user = block_for_db(&db_pool, move |mut conn| {
-        User::get_by_email(&request.email, &mut conn)
+    let user = block_for_db(&db_pool, move |conn| {
+        User::get_by_email(&request.email, conn)
     })
-    .await?
-    .map_err(|err| match err {
-        model::DbError::NotFound => ErrorDto::InvalidCredentials,
-        _ => ErrorDto::InternalServerError,
-    })?;
+    .await??
+    .ok_or(ErrorDto::InvalidCredentials)?; // user not found
 
     if !verify_password(&request.password, &user.password) {
         return Err(ErrorDto::InvalidCredentials);
@@ -73,27 +32,50 @@ async fn login(
 
     let token_pair = generate_token_pair(user.id);
 
+    // save the new refresh token in db
     let refresh_token = token_pair.refresh_token.clone();
-    block_for_db(&db_pool, move |mut conn| {
-        save_refresh_token(&user.id, refresh_token, &mut conn)
+    block_for_db(&db_pool, move |conn| {
+        let mut user_update = UserUpdateData::default();
+        user_update.refresh_token = Some(Some(refresh_token));
+        User::update(user.id, &user_update, conn)
     })
-    .await?
-    .map_err(|err| {
-        log::error!("Error saving refresh token {:?}", err);
-        ErrorDto::InternalServerError
-    })?;
+    .await??;
 
     Ok(Json(token_pair))
 }
 
-fn save_refresh_token(
-    user_id: &Uuid,
+#[post("/auth/refresh")]
+async fn refresh_auth(
     refresh_token: String,
-    db_conn: &mut DbConnection,
-) -> Result<(), model::DbError> {
-    let mut user_update = UserUpdateData::default();
-    user_update.refresh_token = Some(Some(refresh_token));
+    db_pool: web::Data<DbPool>,
+) -> Result<Json<TokenPair>, ErrorDto> {
+    let claims =
+        decode_token(&refresh_token, &TokenType::Refresh).ok_or(ErrorDto::InvalidCredentials)?;
 
-    User::update(user_id, &user_update, db_conn)?;
-    Ok(())
+    let user = block_for_db(&db_pool, move |conn| User::get(claims.sub, conn))
+        .await??
+        .ok_or_else(|| {
+            log::warn!(
+                "valid refresh token provided, but subject user {} not found",
+                claims.sub
+            );
+            ErrorDto::InvalidCredentials
+        })?;
+
+    if user.refresh_token == Some(refresh_token) {
+        let token_pair = generate_token_pair(user.id);
+
+        // save the new refresh token in db
+        let refresh_token = token_pair.refresh_token.clone();
+        block_for_db(&db_pool, move |conn| {
+            let mut user_update = UserUpdateData::default();
+            user_update.refresh_token = Some(Some(refresh_token));
+            User::update(user.id, &user_update, conn)
+        })
+        .await??;
+
+        Ok(Json(token_pair))
+    } else {
+        Err(ErrorDto::InvalidCredentials)
+    }
 }

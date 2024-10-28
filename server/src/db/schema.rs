@@ -1,6 +1,6 @@
 diesel::table! {
     users (id) {
-        id -> Uuid,
+        id -> BigSerial,
         email -> Varchar,
         username -> Varchar,
         password -> Varchar,
@@ -11,9 +11,9 @@ diesel::table! {
 
 diesel::table! {
     groups (id) {
-        id -> Uuid,
+        id -> BigSerial,
         name -> Varchar,
-        owner_id -> Uuid,
+        owner_id -> BigSerial,
         created_on -> Timestamp
     }
 }
