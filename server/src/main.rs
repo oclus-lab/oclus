@@ -1,15 +1,30 @@
-use actix_web::HttpServer;
-use dotenv::dotenv;
-use oclus_server::{app, db};
+use actix_web::middleware::Logger;
+use actix_web::web::Data;
+use actix_web::{App, HttpServer};
+use oclus_server::app::service;
+use sqlx::postgres::PgPoolOptions;
+use std::env;
+use std::error::Error;
 
 #[actix_web::main]
-pub async fn main() -> Result<(), std::io::Error> {
-    dotenv().ok();
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("warn"));
+async fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+    dotenv::dotenv()?;
 
-    let db_pool = db::init_conn();
-    HttpServer::new(move || app(db_pool.clone()))
-        .bind(("0.0.0.0", 8080))?
-        .run()
-        .await
+    // setup database
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL is not set");
+    let db_pool = PgPoolOptions::new().connect(&db_url).await?;
+    sqlx::migrate!("./migration").run(&db_pool).await?;
+
+    let server = HttpServer::new(move || {
+        App::new()
+            .configure(service::configure)
+            .app_data(Data::new(db_pool.clone()))
+            .wrap(Logger::default())
+    });
+
+    let bind_addr = env::var("BIND_ADDRESS").expect("BIND_ADDRESS is not set");
+    server.bind(bind_addr)?.run().await?;
+
+    Ok(())
 }
